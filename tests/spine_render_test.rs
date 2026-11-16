@@ -25,6 +25,8 @@ fn spine_text_offset_mm(spine_grow: Option<f64>, spine_mm: Option<f64>) -> Resul
         width_mm: 200.0,
         height_mm: 200.0,
         bleed_mm: COVER_BLEED_MM,
+        bleed_inside_mm: None,
+        first_page_side: Default::default(),
         with_cover: true,
         cover_width_mm: Some(400.0),
         cover_height_mm: Some(200.0),
