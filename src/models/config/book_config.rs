@@ -93,8 +93,8 @@ impl CanvasConfig for BookConfig {
     fn bleed_mm(&self) -> f64 {
         self.bleed_mm
     }
-    fn margin_mm(&self) -> f64 {
-        self.margin_mm
+    fn margins(&self) -> PageMargins {
+        BookConfig::margins(self)
     }
     fn gap_mm(&self) -> f64 {
         self.gap_mm

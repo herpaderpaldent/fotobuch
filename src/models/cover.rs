@@ -1,4 +1,4 @@
-use crate::models::config::{CanvasConfig, CoverConfig, SpineConfig};
+use crate::models::config::{CanvasConfig, CoverConfig, PageMargins, SpineConfig};
 
 /// Geometry value object: binds a `CoverConfig` to a concrete `inner_page_count`
 /// and owns all dimension calculations.
@@ -51,8 +51,8 @@ impl CanvasConfig for CoverGeometry<'_> {
     fn bleed_mm(&self) -> f64 {
         self.cover.bleed_mm
     }
-    fn margin_mm(&self) -> f64 {
-        self.cover.margin_mm
+    fn margins(&self) -> PageMargins {
+        PageMargins::uniform(self.cover.margin_mm)
     }
     fn gap_mm(&self) -> f64 {
         self.cover.gap_mm

@@ -44,10 +44,12 @@ impl Canvas {
     }
 
     /// Creates a Canvas from any CanvasConfig (BookConfig or CoverConfig).
-    /// Canvas dimensions are page size minus 2×margin; gap sets the photo gap β.
+    /// Canvas dimensions are page size minus the margins of both edges per axis;
+    /// gap sets the photo gap β.
     pub fn from_canvas_config(config: &impl CanvasConfig) -> Self {
-        let width = config.page_width_mm() - 2.0 * config.margin_mm();
-        let height = config.page_height_mm() - 2.0 * config.margin_mm();
+        let margins = config.margins();
+        let width = config.page_width_mm() - margins.horizontal();
+        let height = config.page_height_mm() - margins.vertical();
         Self::new(width, height, config.gap_mm())
     }
 }
@@ -154,6 +156,19 @@ mod tests {
             assert_relative_eq!(canvas.width, 277.0, epsilon = 1e-6);
             assert_relative_eq!(canvas.height, 190.0, epsilon = 1e-6);
             assert_eq!(canvas.beta, 5.0);
+        }
+
+        #[test]
+        fn test_from_canvas_config_with_per_edge_margins() {
+            let config = BookConfig {
+                margin_mm: 9.0,
+                margin_inside_mm: Some(12.0),
+                margin_bottom_mm: Some(15.0),
+                ..create_book_config(290.0, 290.0, 0.0, 3.0, 5.0)
+            };
+            let canvas = Canvas::from_canvas_config(&config);
+            assert_relative_eq!(canvas.width, 290.0 - 12.0 - 9.0, epsilon = 1e-6);
+            assert_relative_eq!(canvas.height, 290.0 - 9.0 - 15.0, epsilon = 1e-6);
         }
 
         #[test]

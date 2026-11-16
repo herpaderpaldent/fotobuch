@@ -24,7 +24,7 @@ fn calc_needed_scaling_around_center_for_bleed(
     layout: &SolverPageLayout,
     book_config: &impl CanvasConfig,
 ) -> f64 {
-    if book_config.margin_mm() > 0.0 || book_config.bleed_mm() == 0.0 {
+    if book_config.margins().any_positive() || book_config.bleed_mm() == 0.0 {
         return 1.0;
     }
     let mut bleed_scale_factor = 1.0;
@@ -102,6 +102,23 @@ mod tests {
             margin_mm: 10.0,
             bleed_mm: 5.0,
             bleed_threshold_mm: 5.0,
+            ..Default::default()
+        };
+
+        let scale_factor = calc_needed_scaling_around_center_for_bleed(&layout, &book_config);
+        assert_relative_eq!(scale_factor, 1.0, epsilon = 1e-6);
+    }
+
+    #[test]
+    fn test_calc_scaling_for_bleed_no_bleed_due_to_single_edge_margin() {
+        let canvas = Canvas::new(200.0, 200.0, 0.0);
+        let placements = vec![PhotoPlacement::new(0, 0.0, 0.0, 200.0, 200.0)];
+        let layout = SolverPageLayout::new(placements, canvas);
+
+        let book_config = BookConfig {
+            margin_mm: 0.0,
+            margin_inside_mm: Some(12.0),
+            bleed_mm: 5.0,
             ..Default::default()
         };
 
