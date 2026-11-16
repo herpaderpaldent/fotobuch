@@ -20,7 +20,7 @@ pub fn aspect_ratio(width: f64, height: f64) -> f64 {
 
 pub use config::{
     AppendixConfig, BookConfig, BookLayoutSolverConfig, CanvasConfig, CoverConfig, CoverMode,
-    FitnessWeights, PageLayoutSolverConfig, PreviewConfig, ProjectConfig, SpineConfig,
+    FitnessWeights, PageLayoutSolverConfig, PageMargins, PreviewConfig, ProjectConfig, SpineConfig,
     ValidationError, validate_book_layout_solver_config,
 };
 pub use cover::CoverGeometry;

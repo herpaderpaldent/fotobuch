@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::{AppendixConfig, CanvasConfig, CoverConfig};
+use super::{AppendixConfig, CanvasConfig, CoverConfig, PageMargins};
 use crate::models::PageSide;
 
 /// Book-specific configuration (page dimensions, bleed, margins, gaps)
@@ -24,11 +24,29 @@ pub struct BookConfig {
     /// The sides alternate from there; see [`PageSide`].
     #[serde(default)]
     pub first_page_side: PageSide,
+    /// Margin in mm on every edge of inner pages that has no own value below.
     #[serde(default = "default_margin_mm")]
     pub margin_mm: f64,
+    /// Margin in mm on the inside (spine) edge of inner pages. `None` (`null`) → `margin_mm`.
+    ///
+    /// Which edge is the inside edge follows [`PageSide`]. The four per-edge
+    /// margins are always serialized (as `null` when unset) so `config set`,
+    /// `config show` and the GUI config window can find the keys. The cover is
+    /// not affected.
+    #[serde(default)]
+    pub margin_inside_mm: Option<f64>,
+    /// Margin in mm on the outside (fore) edge of inner pages. `None` → `margin_mm`.
+    #[serde(default)]
+    pub margin_outside_mm: Option<f64>,
+    /// Margin in mm on the top edge of inner pages. `None` → `margin_mm`.
+    #[serde(default)]
+    pub margin_top_mm: Option<f64>,
+    /// Margin in mm on the bottom edge of inner pages. `None` → `margin_mm`.
+    #[serde(default)]
+    pub margin_bottom_mm: Option<f64>,
     #[serde(default = "default_gap_mm")]
     pub gap_mm: f64,
-    /// Min distance to page edge to consider a photo "touching" the edge and thus needing bleed. Only active if margin_mm = 0.
+    /// Min distance to page edge to consider a photo "touching" the edge and thus needing bleed. Only active if all margins are 0.
     #[serde(default = "default_bleed_threshold_mm")]
     pub bleed_threshold_mm: f64,
     /// DPI for final image generation (default: 300)
@@ -46,6 +64,17 @@ impl BookConfig {
     /// Effective inside (spine) bleed of inner pages in mm.
     pub fn effective_bleed_inside_mm(&self) -> f64 {
         self.bleed_inside_mm.unwrap_or(self.bleed_mm)
+    }
+
+    /// Effective margins of inner pages; unset edges fall back to `margin_mm`.
+    pub fn margins(&self) -> PageMargins {
+        let or_default = |m: Option<f64>| m.unwrap_or(self.margin_mm);
+        PageMargins {
+            inside: or_default(self.margin_inside_mm),
+            outside: or_default(self.margin_outside_mm),
+            top: or_default(self.margin_top_mm),
+            bottom: or_default(self.margin_bottom_mm),
+        }
     }
 
     /// `(left, right)` bleed in mm of an inner page on the given side.
@@ -101,6 +130,10 @@ impl Default for BookConfig {
             bleed_inside_mm: None,
             first_page_side: PageSide::default(),
             margin_mm: default_margin_mm(),
+            margin_inside_mm: None,
+            margin_outside_mm: None,
+            margin_top_mm: None,
+            margin_bottom_mm: None,
             gap_mm: default_gap_mm(),
             bleed_threshold_mm: default_bleed_threshold_mm(),
             dpi: default_dpi(),
@@ -159,6 +192,39 @@ mod tests {
             serde_yaml::from_str(&format!("{yaml}bleed_inside_mm: null\n")).unwrap();
         assert_eq!(cfg.bleed_inside_mm, None);
         assert_eq!(cfg.effective_bleed_inside_mm(), 3.0);
+    }
+
+    #[test]
+    fn margins_fall_back_to_margin_mm() {
+        // YAML written before the per-edge margins existed.
+        let yaml = "title: t\npage_width_mm: 290\npage_height_mm: 290\nbleed_mm: 3\nmargin_mm: 5\n";
+        let cfg: BookConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(cfg.margins(), PageMargins::uniform(5.0));
+        assert!(
+            serde_yaml::to_string(&cfg)
+                .unwrap()
+                .contains("margin_inside_mm: null")
+        );
+    }
+
+    #[test]
+    fn margins_per_edge_override_margin_mm() {
+        let cfg = BookConfig {
+            margin_mm: 9.0,
+            margin_inside_mm: Some(12.0),
+            ..BookConfig::default()
+        };
+        assert_eq!(
+            cfg.margins(),
+            PageMargins {
+                inside: 12.0,
+                outside: 9.0,
+                top: 9.0,
+                bottom: 9.0,
+            }
+        );
+        assert_eq!(cfg.margins().left_right(PageSide::Right), (12.0, 9.0));
+        assert_eq!(cfg.margins().left_right(PageSide::Left), (9.0, 12.0));
     }
 
     #[test]

@@ -11,6 +11,7 @@ mod canvas_config;
 mod cover_config;
 mod fitness_weights;
 mod page_layout_solver_config;
+mod page_margins;
 mod preview_config;
 mod project_config;
 
@@ -22,5 +23,6 @@ pub use canvas_config::CanvasConfig;
 pub use cover_config::{CoverConfig, CoverMode, SpineConfig};
 pub use fitness_weights::FitnessWeights;
 pub use page_layout_solver_config::PageLayoutSolverConfig;
+pub use page_margins::PageMargins;
 pub use preview_config::PreviewConfig;
 pub use project_config::ProjectConfig;
