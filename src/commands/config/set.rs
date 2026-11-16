@@ -314,6 +314,18 @@ mod tests {
     }
 
     #[test]
+    fn test_set_per_edge_margins() {
+        let (_tmp, root) = open_tmp();
+        config_set(&root, "book.margin_mm", "9").unwrap();
+        let res = config_set(&root, "book.margin_inside_mm", "12").unwrap();
+        assert_eq!(res.result.old_value, "null");
+        let mgr = StateManager::open(&root).unwrap();
+        let margins = mgr.state.config.book.margins();
+        assert_eq!((margins.inside, margins.outside), (12.0, 9.0));
+        assert_eq!((margins.top, margins.bottom), (9.0, 9.0));
+    }
+
+    #[test]
     fn test_parse_null() {
         assert_eq!(parse_yaml_value("null"), Value::Null);
         assert_eq!(parse_yaml_value("~"), Value::Null);

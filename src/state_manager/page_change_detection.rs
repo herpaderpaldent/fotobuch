@@ -209,7 +209,7 @@ fn inner_canvas_changed(reference: &ProjectState, new: &ProjectState) -> bool {
     r.page_width_mm != n.page_width_mm
         || r.page_height_mm != n.page_height_mm
         || r.bleed_mm != n.bleed_mm
-        || r.margin_mm != n.margin_mm
+        || r.margins() != n.margins()
         || r.gap_mm != n.gap_mm
         || r.bleed_threshold_mm != n.bleed_threshold_mm
 }
@@ -271,6 +271,10 @@ mod tests {
                     bleed_inside_mm: None,
                     first_page_side: Default::default(),
                     margin_mm: 10.0,
+                    margin_inside_mm: None,
+                    margin_outside_mm: None,
+                    margin_top_mm: None,
+                    margin_bottom_mm: None,
                     gap_mm: 5.0,
                     bleed_threshold_mm: 3.0,
                     dpi: 300.0,
@@ -831,6 +835,47 @@ mod tests {
 
         let outdated = compute_outdated_pages(&reference, &new);
         assert_eq!(outdated, vec![0, 1]);
+    }
+
+    fn cover_and_two_inner_pages() -> (ProjectState, ProjectState) {
+        let slot = make_slot(0.0, 0.0, 100.0, 100.0);
+        let pages: Vec<_> = ["A", "B", "C"]
+            .iter()
+            .enumerate()
+            .map(|(i, id)| make_page(i, vec![id.to_string()], vec![slot.clone()]))
+            .collect();
+        let mut reference = make_state_with_cover("ref", pages.clone(), CoverMode::Free);
+        reference.photos = vec![PhotoGroup {
+            group: "g".to_string(),
+            sort_key: "2024-01-01T00:00:00Z".to_string(),
+            files: ["A", "B", "C"]
+                .iter()
+                .map(|id| make_photo(id, 100, 100, 1.0))
+                .collect(),
+        }];
+        let mut new = make_state_with_cover("new", pages, CoverMode::Free);
+        new.photos = reference.photos.clone();
+        (reference, new)
+    }
+
+    #[test]
+    fn test_per_edge_margin_change_marks_inner_pages_outdated() {
+        let (reference, mut new) = cover_and_two_inner_pages();
+        new.config.book.margin_inside_mm = Some(12.0);
+        assert_eq!(compute_outdated_pages(&reference, &new), vec![1, 2]);
+
+        let (reference, mut new) = cover_and_two_inner_pages();
+        new.config.book.margin_bottom_mm = Some(15.0);
+        assert_eq!(compute_outdated_pages(&reference, &new), vec![1, 2]);
+    }
+
+    #[test]
+    fn test_per_edge_margin_equal_to_margin_mm_keeps_pages_up_to_date() {
+        let (reference, mut new) = cover_and_two_inner_pages();
+        let margin = new.config.book.margin_mm;
+        new.config.book.margin_inside_mm = Some(margin);
+        new.config.book.margin_top_mm = Some(margin);
+        assert!(compute_outdated_pages(&reference, &new).is_empty());
     }
 
     #[test]

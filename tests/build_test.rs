@@ -990,3 +990,53 @@ fn release_pdf_uses_cover_bleed_for_cover_trim_box() -> Result<()> {
 
     Ok(())
 }
+
+/// CEWE margins: 12 mm at the spine, 9 mm on the other edges. Slots must fit
+/// the canvas that is left after the margins, and changing a margin must
+/// rebuild the inner pages.
+#[test]
+fn build_respects_per_edge_margins() -> Result<()> {
+    let temp_dir = TempDir::new()?;
+    let project_root = create_test_project_with_artificial_photos_3(&temp_dir)?;
+
+    let mut mgr = StateManager::open(&project_root)?;
+    mgr.state.config.book.margin_mm = 9.0;
+    mgr.state.config.book.margin_inside_mm = Some(12.0);
+    mgr.finish("test: set CEWE margins")?;
+
+    let build_config = BuildConfig {
+        plan: BuildPlan::Auto { pages: None },
+        skip_pdf: false,
+        skip_cache_update: false,
+    };
+    build(&project_root, &build_config)?;
+
+    let state = read_state_yaml(&project_root.join("testbuild.yaml"))?;
+    let (canvas_w, canvas_h) = (200.0 - 12.0 - 9.0, 250.0 - 9.0 - 9.0);
+    let eps = 1e-6;
+    for (page, layout) in state.layout.iter().enumerate() {
+        for slot in &layout.slots {
+            assert!(
+                slot.x_mm >= -eps && slot.y_mm >= -eps,
+                "page {page}: slot outside canvas: {slot:?}"
+            );
+            assert!(
+                slot.x_mm + slot.width_mm <= canvas_w + eps
+                    && slot.y_mm + slot.height_mm <= canvas_h + eps,
+                "page {page}: slot outside canvas {canvas_w}×{canvas_h}: {slot:?}"
+            );
+        }
+    }
+    assert!(project_root.join("testbuild.pdf").exists());
+
+    let mut mgr = StateManager::open(&project_root)?;
+    mgr.state.config.book.margin_bottom_mm = Some(15.0);
+    mgr.finish("test: widen bottom margin")?;
+    let rebuilt = build(&project_root, &build_config)?;
+    assert_eq!(
+        rebuilt.result.pages_rebuilt.len(),
+        state.layout.len(),
+        "a margin change must rebuild every inner page"
+    );
+    Ok(())
+}
