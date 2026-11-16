@@ -68,19 +68,43 @@
   let bi = data.config.book.at("bleed_inside_mm", default: none)
   if bi == none { bleed } else { bi * 1mm }
 }
-#let margin = data.config.book.margin_mm * 1mm
+// Margins per edge (margin_inside_mm etc.), each falls back to margin_mm.
+#let margin_or_default(key) = {
+  let m = data.config.book.at(key, default: none)
+  if m == none { data.config.book.margin_mm * 1mm } else { m * 1mm }
+}
+#let margin = (
+  inside: margin_or_default("margin_inside_mm"),
+  outside: margin_or_default("margin_outside_mm"),
+  top: margin_or_default("margin_top_mm"),
+  bottom: margin_or_default("margin_bottom_mm"),
+)
 #set page(
   width: data.config.book.page_width_mm * 1mm + bleed + bleed_inside,
   height: data.config.book.page_height_mm * 1mm + 2 * bleed,
-  margin: (inside: bleed_inside + margin, outside: bleed + margin, y: bleed + margin),
+  margin: (
+    inside: bleed_inside + margin.inside,
+    outside: bleed + margin.outside,
+    top: bleed + margin.top,
+    bottom: bleed + margin.bottom,
+  ),
   binding: if (not has_cover) == first_page_right { left } else { right },
 )
 
-// Returns (left, right) bleed of the inner page with layout index `page_index`
-#let inner_bleed_lr(page_index) = {
+// Maps (inside, outside) to (left, right) for the inner page with layout index `page_index`
+#let inner_lr(page_index, inside, outside) = {
   let inner_idx = if has_cover { page_index - 1 } else { page_index }
   let is_right_hand = calc.even(inner_idx) == first_page_right
-  if is_right_hand { (bleed_inside, bleed) } else { (bleed, bleed_inside) }
+  if is_right_hand { (inside, outside) } else { (outside, inside) }
+}
+
+// Returns (left, right) bleed of the inner page with layout index `page_index`
+#let inner_bleed_lr(page_index) = inner_lr(page_index, bleed_inside, bleed)
+
+// Returns the margin per physical edge of the inner page with layout index `page_index`
+#let inner_margin_edges(page_index) = {
+  let (left, right) = inner_lr(page_index, margin.inside, margin.outside)
+  (left: left, right: right, top: margin.top, bottom: margin.bottom)
 }
 
 // ── Utility functions ────────────────────────────────────────────────
@@ -164,22 +188,25 @@
 // ── Page rendering blocks ────────────────────────────────────────────
 
 // Draws red bleed border and blue margin border as overlays (w_mm/h_mm = content size without bleed)
-// b = top/bottom bleed, bl/br = left/right bleed, m = margin (length values)
+// b = top/bottom bleed, bl/br = left/right bleed (lengths); m = one margin for all
+// edges or a dictionary (left, right, top, bottom).
+// Positions are relative to the content area, whose origin is the top-left margin corner.
 #let draw_borders(w_mm, h_mm, b, m, bl: auto, br: auto) = [
   #let bl = if bl == auto { b } else { bl }
   #let br = if br == auto { b } else { br }
+  #let m = if type(m) == dictionary { m } else { (left: m, right: m, top: m, bottom: m) }
   #let w = w_mm * 1mm
   #let h = h_mm * 1mm
-  #place(top + left, dx: -m - bl, dy: -m - b, rect(width: w + bl + br, height: b, fill: red))
-  #place(top + left, dx: -m - bl, dy: -m + h, rect(width: w + bl + br, height: b, fill: red))
-  #place(top + left, dx: -m - bl, dy: -m, rect(width: bl, height: h, fill: red))
-  #place(top + left, dx: -m + w, dy: -m, rect(width: br, height: h, fill: red))
-  #place(top + left, dx: -m / 2, dy: -m / 2, rect(
-    width: w_mm * 1mm - m,
-    height: h_mm * 1mm - m,
-    stroke: (paint: blue, thickness: m),
-    fill: none,
-  ))
+  #let x0 = -m.left
+  #let y0 = -m.top
+  #place(top + left, dx: x0 - bl, dy: y0 - b, rect(width: w + bl + br, height: b, fill: red))
+  #place(top + left, dx: x0 - bl, dy: y0 + h, rect(width: w + bl + br, height: b, fill: red))
+  #place(top + left, dx: x0 - bl, dy: y0, rect(width: bl, height: h, fill: red))
+  #place(top + left, dx: x0 + w, dy: y0, rect(width: br, height: h, fill: red))
+  #place(top + left, dx: x0, dy: y0, rect(width: w, height: m.top, fill: blue))
+  #place(top + left, dx: x0, dy: y0 + h - m.bottom, rect(width: w, height: m.bottom, fill: blue))
+  #place(top + left, dx: x0, dy: y0, rect(width: m.left, height: h, fill: blue))
+  #place(top + left, dx: x0 + w - m.right, dy: y0, rect(width: m.right, height: h, fill: blue))
 ]
 
 // Renders a slot: thin black frame, centered slot address, and optionally a photo with weight
@@ -395,7 +422,7 @@
     data.config.book.page_width_mm,
     data.config.book.page_height_mm,
     bleed,
-    margin,
+    inner_margin_edges(page_index),
     bl: bleed_l,
     br: bleed_r,
   )]

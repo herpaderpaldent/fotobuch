@@ -175,6 +175,73 @@ mod tests {
         render_facing(true, crate::models::PageSide::Left);
     }
 
+    /// Renders the real template with CEWE margins (inside 12 mm, else 9 mm)
+    /// and checks the blue margin overlay: the wide margin sits on the spine
+    /// edge, i.e. left on right-hand pages and right on left-hand pages.
+    #[test]
+    fn template_renders_per_edge_margins() {
+        use crate::models::{LayoutPage, PageSide, ProjectState, write_state_yaml};
+        use crate::output::typst::{TypstWorld, render_pages_with_world};
+
+        let temp = tempfile::TempDir::new().unwrap();
+        let mut state = ProjectState::default();
+        let book = &mut state.config.book;
+        book.page_width_mm = 290.0;
+        book.page_height_mm = 290.0;
+        book.bleed_mm = 3.0;
+        book.margin_mm = 9.0;
+        book.margin_inside_mm = Some(12.0);
+        state.config.preview.show_preview_watermark = false;
+        let empty = LayoutPage {
+            photos: vec![],
+            slots: vec![],
+            mode: Default::default(),
+        };
+        state.layout = vec![empty; 2];
+        write_state_yaml(&state, &temp.path().join("book.yaml")).unwrap();
+        std::fs::write(
+            temp.path().join("book.typ"),
+            generate_template("book").unwrap(),
+        )
+        .unwrap();
+
+        let mut world = TypstWorld::new(temp.path(), "book").unwrap();
+        let rendered = render_pages_with_world(&mut world, &[0, 1], 1.0).unwrap();
+        let px_per_mm = 72.0 / 25.4;
+        for page in rendered {
+            let is_blue_at = |x_mm: f64, y_mm: f64| {
+                let (x, y) = ((x_mm * px_per_mm) as u32, (y_mm * px_per_mm) as u32);
+                let o = ((y * page.width + x) * 4) as usize;
+                let p = &page.pixels[o..o + 3];
+                // Typst's `blue` is #0074D9.
+                p[2] > 200 && p[0] < 40 && p[1] < 160
+            };
+            // Full page: 3 mm bleed + 290 mm trim + 3 mm bleed = 296 mm.
+            let (mid, near_left, near_right) = (148.0, 3.0 + 10.5, 296.0 - 3.0 - 10.5);
+            let (left_wide, right_wide) = (is_blue_at(near_left, mid), is_blue_at(near_right, mid));
+            match state.page_side(page.page).unwrap() {
+                PageSide::Right => assert!(left_wide && !right_wide, "page {}", page.page),
+                PageSide::Left => assert!(!left_wide && right_wide, "page {}", page.page),
+            }
+            assert!(is_blue_at(mid, 3.0 + 7.5), "top margin, page {}", page.page);
+            assert!(
+                !is_blue_at(mid, 3.0 + 10.5),
+                "top margin, page {}",
+                page.page
+            );
+            assert!(
+                is_blue_at(mid, 296.0 - 3.0 - 7.5),
+                "bottom, page {}",
+                page.page
+            );
+            assert!(
+                !is_blue_at(mid, 296.0 - 3.0 - 10.5),
+                "bottom, page {}",
+                page.page
+            );
+        }
+    }
+
     /// A project YAML written before `bleed_inside_mm` existed (no key at all)
     /// must render exactly as before: 296 mm wide, symmetric TrimBox.
     #[test]
