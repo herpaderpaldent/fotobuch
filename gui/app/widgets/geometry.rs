@@ -15,7 +15,9 @@ pub struct PageDimensions {
     pub bleed_left_mm: f64,
     /// Bleed on the right edge (differs from `bleed_mm` on the spine edge of inner pages).
     pub bleed_right_mm: f64,
-    pub margin_mm: f64,
+    /// Margin on the left edge (the spine margin on right-hand pages).
+    pub margin_left_mm: f64,
+    pub margin_top_mm: f64,
 }
 
 /// Per-axis scale factors and content-area offset derived from `PageDimensions` and a screen rect.
@@ -23,10 +25,10 @@ pub struct PageScale {
     pub scale_x: f32,
     pub scale_y: f32,
     /// Horizontal distance in mm from the physical page corner to the content-area origin:
-    /// `bleed_left + margin`.
+    /// `bleed_left + margin_left`.
     pub offset_x_mm: f32,
     /// Vertical distance in mm from the physical page corner to the content-area origin:
-    /// `bleed + margin`.
+    /// `bleed + margin_top`.
     pub offset_y_mm: f32,
 }
 
@@ -34,19 +36,22 @@ impl PageDimensions {
     /// Dimensions of the page with layout index `page_idx`, including per-side bleed.
     pub fn for_page(project: &ProjectState, page_idx: usize) -> Self {
         let (width_mm, height_mm) = project.page_dimensions_mm(page_idx);
-        let (bleed_mm, margin_mm) = project.page_bleed_margin_mm(page_idx);
+        let bleed_mm = project.page_bleed_mm(page_idx);
         let (bleed_left_mm, bleed_right_mm) = project.page_bleed_left_right_mm(page_idx);
+        let (margin_left_mm, _) = project.page_margin_left_right_mm(page_idx);
+        let margin_top_mm = project.page_margins_mm(page_idx).top;
         Self {
             width_mm,
             height_mm,
             bleed_mm,
             bleed_left_mm,
             bleed_right_mm,
-            margin_mm,
+            margin_left_mm,
+            margin_top_mm,
         }
     }
 
-    /// Same bleed on all four sides.
+    /// Same bleed and margin on all four sides.
     #[cfg(test)]
     pub fn uniform(width_mm: f64, height_mm: f64, bleed_mm: f64, margin_mm: f64) -> Self {
         Self {
@@ -55,7 +60,8 @@ impl PageDimensions {
             bleed_mm,
             bleed_left_mm: bleed_mm,
             bleed_right_mm: bleed_mm,
-            margin_mm,
+            margin_left_mm: margin_mm,
+            margin_top_mm: margin_mm,
         }
     }
 
@@ -73,8 +79,8 @@ impl PageDimensions {
         PageScale {
             scale_x: page_rect.width() / self.full_width_mm() as f32,
             scale_y: page_rect.height() / self.full_height_mm() as f32,
-            offset_x_mm: (self.bleed_left_mm + self.margin_mm) as f32,
-            offset_y_mm: (self.bleed_mm + self.margin_mm) as f32,
+            offset_x_mm: (self.bleed_left_mm + self.margin_left_mm) as f32,
+            offset_y_mm: (self.bleed_mm + self.margin_top_mm) as f32,
         }
     }
 }
@@ -258,5 +264,20 @@ mod tests {
         assert!((rect.min.x - 0.0).abs() < 0.01, "x: {}", rect.min.x);
         assert!((rect.min.y - 3.0).abs() < 0.01, "y: {}", rect.min.y);
         assert!((rect.max.x - 10.0).abs() < 0.01, "max x: {}", rect.max.x);
+    }
+
+    #[test]
+    fn slot_offset_uses_left_margin() {
+        // Left-hand inner page with CEWE margins: outside (left) 9mm, top 9mm.
+        // Rendered image is 206×106mm, displayed 206×106 px → 1 px/mm.
+        let pr = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(206.0, 106.0));
+        let dims = PageDimensions {
+            margin_left_mm: 9.0,
+            margin_top_mm: 9.0,
+            ..PageDimensions::uniform(200.0, 100.0, 3.0, 12.0)
+        };
+        let rect = slot_rect_on_screen(pr, dims, &full_slot(10.0, 10.0));
+        assert!((rect.min.x - 12.0).abs() < 0.01, "x: {}", rect.min.x);
+        assert!((rect.min.y - 12.0).abs() < 0.01, "y: {}", rect.min.y);
     }
 }

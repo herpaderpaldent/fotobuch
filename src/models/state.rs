@@ -59,15 +59,33 @@ impl ProjectState {
         }
     }
 
-    /// Returns `(bleed_mm, margin_mm)` for the given page index.
-    pub fn page_bleed_margin_mm(&self, page: usize) -> (f64, f64) {
+    /// Returns the bleed on the top and bottom edge for the given page index.
+    pub fn page_bleed_mm(&self, page: usize) -> f64 {
         if self.has_cover() && page == 0 {
-            (
-                self.config.book.cover.bleed_mm,
-                self.config.book.cover.margin_mm,
-            )
+            self.config.book.cover.bleed_mm
         } else {
-            (self.config.book.bleed_mm, self.config.book.margin_mm)
+            self.config.book.bleed_mm
+        }
+    }
+
+    /// Returns the margins of the given page index. The cover uses its own
+    /// `margin_mm` on every edge.
+    pub fn page_margins_mm(&self, page: usize) -> PageMargins {
+        if self.has_cover() && page == 0 {
+            PageMargins::uniform(self.config.book.cover.margin_mm)
+        } else {
+            self.config.book.margins()
+        }
+    }
+
+    /// Returns `(left, right)` margin in mm for the given page index.
+    ///
+    /// Inner pages put `margin_inside_mm` on the spine edge (see [`PageSide`]).
+    pub fn page_margin_left_right_mm(&self, page: usize) -> (f64, f64) {
+        let margins = self.page_margins_mm(page);
+        match self.page_side(page) {
+            Some(side) => margins.left_right(side),
+            None => (margins.inside, margins.outside),
         }
     }
 
@@ -79,7 +97,7 @@ impl ProjectState {
         match self.page_side(page) {
             Some(side) => self.config.book.bleed_left_right_mm(side),
             None => {
-                let (bleed, _) = self.page_bleed_margin_mm(page);
+                let bleed = self.page_bleed_mm(page);
                 (bleed, bleed)
             }
         }
@@ -374,5 +392,24 @@ mod tests {
         let (w1, h1) = state.page_dimensions_mm(1);
         assert_eq!(w1, state.config.book.page_width_mm);
         assert_eq!(h1, state.config.book.page_height_mm);
+    }
+
+    #[test]
+    fn page_margins_put_inside_margin_on_spine_edge() {
+        let mut state = minimal_state();
+        state.config.book.margin_mm = 9.0;
+        state.config.book.margin_inside_mm = Some(12.0);
+        state.config.book.cover = CoverConfig {
+            active: true,
+            margin_mm: 4.0,
+            ..CoverConfig::default()
+        };
+        // Cover: own margin on every edge.
+        assert_eq!(state.page_margins_mm(0), PageMargins::uniform(4.0));
+        assert_eq!(state.page_margin_left_right_mm(0), (4.0, 4.0));
+        // First inner page is right-hand: spine on the left.
+        assert_eq!(state.page_margin_left_right_mm(1), (12.0, 9.0));
+        assert_eq!(state.page_margin_left_right_mm(2), (9.0, 12.0));
+        assert_eq!(state.page_margins_mm(1).top, 9.0);
     }
 }
