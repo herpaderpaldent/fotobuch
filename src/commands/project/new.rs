@@ -4,7 +4,7 @@
 //! - Mode 1: First project (no fotobuch/* branches exist) - creates new directory
 //! - Mode 2: Additional project (fotobuch/* branches exist) - creates in repository root
 
-mod template;
+pub(crate) mod template;
 mod validation;
 mod yaml;
 
