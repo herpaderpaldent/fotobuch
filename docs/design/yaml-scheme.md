@@ -9,7 +9,12 @@ config:
     bleed_mm: 3.0
     bleed_inside_mm: 0.0            # optional, default = bleed_mm; Beschnitt an der Bundkante der Innenseiten
     first_page_side: right          # optional, default right; Seite der ersten Innenseite (right = Umschlag-Innenseiten unbedruckt, left = vordere Umschlag-Innenseite wird mitgedruckt)
-    # margin_mm, gap_mm, bleed_threshold_mm: defaulted
+    margin_mm: 9.0                  # optional, default 0.0; Rand aller Kanten ohne eigenen Wert
+    margin_inside_mm: 12.0          # optional, default = margin_mm; Rand an der Bundkante der Innenseiten (folgt first_page_side)
+    margin_outside_mm: ~            # optional, default = margin_mm; Rand an der Außenkante
+    margin_top_mm: ~                # optional, default = margin_mm
+    margin_bottom_mm: ~             # optional, default = margin_mm
+    # gap_mm, bleed_threshold_mm: defaulted
     cover:                          # optional — fehlt dieser Block, gibt es kein Cover
       active: true                  # false = Cover-Block vorhanden aber deaktiviert
       spine_mm_per_10_pages: 1.4   # Rückendicke pro 10 Seiten
