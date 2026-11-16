@@ -56,12 +56,14 @@ pub fn compile(template_path: &Path, output_path: &Path) -> Result<()> {
 ///
 /// Inner pages carry `bleed_inside_mm` on the inside (spine) edge and
 /// `bleed_mm` on the other three edges; the side of each page follows
-/// [`PageSide`]. The cover (PDF page 0 when `has_cover`) uses `bleed_mm` on
-/// all sides.
+/// [`PageSide`]. The cover (PDF page 0 when `has_cover`) uses
+/// `cover_bleed_mm` on all sides.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BleedSpec {
     pub bleed_mm: f64,
     pub bleed_inside_mm: f64,
+    /// Bleed of the cover page; only used when `has_cover`.
+    pub cover_bleed_mm: f64,
     pub has_cover: bool,
     /// Side of the first inner page.
     pub first_page_side: PageSide,
@@ -85,6 +87,7 @@ impl BleedSpec {
         Self {
             bleed_mm: book.bleed_mm,
             bleed_inside_mm: book.effective_bleed_inside_mm(),
+            cover_bleed_mm: book.cover.bleed_mm,
             has_cover: book.cover.active,
             first_page_side: book.first_page_side,
             inner_trim_width_mm: book.page_width_mm,
@@ -92,7 +95,9 @@ impl BleedSpec {
     }
 
     fn has_bleed(&self) -> bool {
-        self.bleed_mm > 0.0 || self.bleed_inside_mm > 0.0
+        self.bleed_mm > 0.0
+            || self.bleed_inside_mm > 0.0
+            || (self.has_cover && self.cover_bleed_mm > 0.0)
     }
 
     fn is_symmetric(&self) -> bool {
@@ -102,6 +107,15 @@ impl BleedSpec {
     /// Bleed per edge of the PDF page with 0-based index `pdf_page`.
     /// Pages after the layout (e.g. the appendix) continue the parity.
     fn edges(&self, pdf_page: usize) -> EdgeBleed {
+        if self.has_cover && pdf_page == 0 {
+            let c = self.cover_bleed_mm;
+            return EdgeBleed {
+                left: c,
+                right: c,
+                top: c,
+                bottom: c,
+            };
+        }
         let b = self.bleed_mm;
         let (left, right) = match PageSide::for_page(pdf_page, self.has_cover, self.first_page_side)
         {
@@ -372,11 +386,95 @@ mod tests {
             Self {
                 bleed_mm,
                 bleed_inside_mm: bleed_mm,
+                cover_bleed_mm: bleed_mm,
                 has_cover: false,
                 first_page_side: PageSide::Right,
                 inner_trim_width_mm: 0.0,
             }
         }
+    }
+
+    /// Returns `(MediaBox, TrimBox)` of every page as `[x0, y0, x1, y1]` in pt.
+    fn media_and_trim_boxes(pdf: &[u8]) -> Vec<([f32; 4], [f32; 4])> {
+        let doc = Document::load_mem(pdf).unwrap();
+        let read_box = |page: &lopdf::Dictionary, key: &[u8]| -> [f32; 4] {
+            let arr = page.get(key).unwrap().as_array().unwrap();
+            std::array::from_fn(|i| arr[i].as_float().unwrap())
+        };
+        doc.get_pages()
+            .values()
+            .map(|&id| {
+                let page = doc.get_object(id).unwrap().as_dict().unwrap();
+                (read_box(page, b"MediaBox"), read_box(page, b"TrimBox"))
+            })
+            .collect()
+    }
+
+    fn assert_trim_inset(media: [f32; 4], trim: [f32; 4], bleed_mm: f64) {
+        let inset = bleed_mm as f32 * (72.0 / 25.4);
+        let expected = [
+            media[0] + inset,
+            media[1] + inset,
+            media[2] - inset,
+            media[3] - inset,
+        ];
+        for (t, e) in trim.iter().zip(expected) {
+            assert!(
+                (t - e).abs() < 0.01,
+                "TrimBox {trim:?} != expected {expected:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_add_pdf_boxes_uses_cover_bleed_for_first_page() {
+        let temp = TempDir::new().unwrap();
+        let template = temp.path().join("cover_bleed_test.typ");
+        fs::write(
+            &template,
+            "#set page(width: 420mm, height: 270mm)\nCover\n\
+             #page(width: 206mm, height: 256mm)[Inner]",
+        )
+        .unwrap();
+        let pdf_bytes = compile_to_pdf_bytes(&template).unwrap();
+
+        let spec = BleedSpec {
+            cover_bleed_mm: 10.0,
+            has_cover: true,
+            ..BleedSpec::uniform_for_test(3.0)
+        };
+        let annotated = add_pdf_boxes(&pdf_bytes, &spec).unwrap();
+
+        let boxes = media_and_trim_boxes(&annotated);
+        assert_eq!(boxes.len(), 2, "expected cover + one inner page");
+        assert_trim_inset(boxes[0].0, boxes[0].1, 10.0);
+        assert_trim_inset(boxes[1].0, boxes[1].1, 3.0);
+    }
+
+    #[test]
+    fn test_bleed_spec_cover_edges_and_has_bleed() {
+        let spec = BleedSpec {
+            cover_bleed_mm: 10.0,
+            has_cover: true,
+            ..BleedSpec::uniform_for_test(3.0)
+        };
+        assert_eq!(spec.edges(0).left, 10.0);
+        assert_eq!(spec.edges(0).top, 10.0);
+        assert_eq!(spec.edges(1).top, 3.0);
+
+        let no_cover = BleedSpec {
+            cover_bleed_mm: 10.0,
+            ..BleedSpec::uniform_for_test(3.0)
+        };
+        assert_eq!(no_cover.edges(0).left, 3.0);
+
+        let cover_only = BleedSpec {
+            cover_bleed_mm: 5.0,
+            has_cover: true,
+            ..BleedSpec::uniform_for_test(0.0)
+        };
+        assert!(cover_only.has_bleed());
+        assert!(!BleedSpec::uniform_for_test(0.0).has_bleed());
     }
 
     const PT_PER_MM: f32 = 72.0 / 25.4;
@@ -410,6 +508,7 @@ mod tests {
         BleedSpec {
             bleed_mm: 3.0,
             bleed_inside_mm: 0.0,
+            cover_bleed_mm: 3.0,
             has_cover,
             first_page_side: PageSide::Right,
             inner_trim_width_mm: 290.0,
